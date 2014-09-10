@@ -1,15 +1,14 @@
 var assert = require('assert')
-var base58check = require('./base58check')
-
-var BigInteger = require('bigi')
+var base58check = require('bs58check')
 var crypto = require('./crypto')
-var ECKey = require('./eckey')
-var ECPubKey = require('./ecpubkey')
-var ECPointFp = require('./ec').ECPointFp
 var networks = require('./networks')
 
-var sec = require('./sec')
-var ecparams = sec("secp256k1")
+var BigInteger = require('bigi')
+var ECKey = require('./eckey')
+var ECPubKey = require('./ecpubkey')
+
+var ecurve = require('ecurve')
+var curve = ecurve.getCurveByName('secp256k1')
 
 function findBIP32ParamsByVersion(version) {
   for (var name in networks) {
@@ -32,6 +31,7 @@ function HDNode(K, chainCode, network) {
   network = network || networks.bitcoin
 
   assert(Buffer.isBuffer(chainCode), 'Expected Buffer, got ' + chainCode)
+  assert.equal(chainCode.length, 32, 'Expected chainCode length of 32, got ' + chainCode.length)
   assert(network.bip32, 'Unknown BIP32 constants for network')
 
   this.chainCode = chainCode
@@ -52,6 +52,10 @@ HDNode.HIGHEST_BIT = 0x80000000
 HDNode.LENGTH = 78
 
 HDNode.fromSeedBuffer = function(seed, network) {
+  assert(Buffer.isBuffer(seed), 'Expected Buffer, got ' + seed)
+  assert(seed.length >= 16, 'Seed should be at least 128 bits')
+  assert(seed.length <= 64, 'Seed should be at most 512 bits')
+
   var I = crypto.HmacSHA512(seed, HDNode.MASTER_SECRET)
   var IL = I.slice(0, 32)
   var IR = I.slice(32)
@@ -100,20 +104,20 @@ HDNode.fromBuffer = function(buffer) {
   if (params.isPrivate) {
     assert.strictEqual(buffer.readUInt8(45), 0x00, 'Invalid private key')
     var data = buffer.slice(46, 78)
-    var D = BigInteger.fromBuffer(data)
-    hd = new HDNode(D, chainCode, params.network)
+    var d = BigInteger.fromBuffer(data)
+    hd = new HDNode(d, chainCode, params.network)
 
   // 33 bytes: public key data (0x02 + X or 0x03 + X)
   } else {
     var data = buffer.slice(45, 78)
-    var decode = ECPointFp.decodeFrom(ecparams.getCurve(), data)
-    assert.equal(decode.compressed, true, 'Invalid public key')
+    var Q = ecurve.Point.decodeFrom(curve, data)
+    assert.equal(Q.compressed, true, 'Invalid public key')
 
     // Verify that the X coordinate in the public point corresponds to a point on the curve.
     // If not, the extended public key is invalid.
-    decode.Q.validate()
+    curve.validate(Q)
 
-    hd = new HDNode(decode.Q, chainCode, params.network)
+    hd = new HDNode(Q, chainCode, params.network)
   }
 
   hd.depth = depth
@@ -139,12 +143,27 @@ HDNode.prototype.getAddress = function() {
   return this.pubKey.getAddress(this.network)
 }
 
+HDNode.prototype.neutered = function() {
+  var neutered = new HDNode(this.pubKey.Q, this.chainCode, this.network)
+  neutered.depth = this.depth
+  neutered.index = this.index
+  neutered.parentFingerprint = this.parentFingerprint
+
+  return neutered
+}
+
 HDNode.prototype.toBase58 = function(isPrivate) {
   return base58check.encode(this.toBuffer(isPrivate))
 }
 
 HDNode.prototype.toBuffer = function(isPrivate) {
-  if (isPrivate == undefined) isPrivate = !!this.privKey
+  if (isPrivate == undefined) {
+    isPrivate = !!this.privKey
+
+  // FIXME: remove in 2.x.y
+  } else {
+    console.warn('isPrivate flag is deprecated, please use the .neutered() method instead')
+  }
 
   // Version
   var version = isPrivate ? this.network.bip32.private : this.network.bip32.public
@@ -170,11 +189,12 @@ HDNode.prototype.toBuffer = function(isPrivate) {
 
   // 33 bytes: the public key or private key data
   if (isPrivate) {
+    // FIXME: remove in 2.x.y
     assert(this.privKey, 'Missing private key')
 
     // 0x00 + k for private keys
     buffer.writeUInt8(0, 45)
-    this.privKey.D.toBuffer(32).copy(buffer, 46)
+    this.privKey.d.toBuffer(32).copy(buffer, 46)
   } else {
 
     // X9.62 encoding for public keys
@@ -202,7 +222,7 @@ HDNode.prototype.derive = function(index) {
 
     // data = 0x00 || ser256(kpar) || ser32(index)
     data = Buffer.concat([
-      this.privKey.D.toBuffer(33),
+      this.privKey.d.toBuffer(33),
       indexBuffer
     ])
 
@@ -223,7 +243,7 @@ HDNode.prototype.derive = function(index) {
   var pIL = BigInteger.fromBuffer(IL)
 
   // In case parse256(IL) >= n, proceed with the next value for i
-  if (pIL.compareTo(ecparams.getN()) >= 0) {
+  if (pIL.compareTo(curve.n) >= 0) {
     return this.derive(index + 1)
   }
 
@@ -231,7 +251,7 @@ HDNode.prototype.derive = function(index) {
   var hd
   if (this.privKey) {
     // ki = parse256(IL) + kpar (mod n)
-    var ki = pIL.add(this.privKey.D).mod(ecparams.getN())
+    var ki = pIL.add(this.privKey.d).mod(curve.n)
 
     // In case ki == 0, proceed with the next value for i
     if (ki.signum() === 0) {
@@ -244,10 +264,10 @@ HDNode.prototype.derive = function(index) {
   } else {
     // Ki = point(parse256(IL)) + Kpar
     //    = G*IL + Kpar
-    var Ki = ecparams.getG().multiply(pIL).add(this.pubKey.Q)
+    var Ki = curve.G.multiply(pIL).add(this.pubKey.Q)
 
     // In case Ki is the point at infinity, proceed with the next value for i
-    if (Ki.isInfinity()) {
+    if (curve.isInfinity(Ki)) {
       return this.derive(index + 1)
     }
 

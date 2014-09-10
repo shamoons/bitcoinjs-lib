@@ -1,13 +1,12 @@
 var assert = require('assert')
 
 var bitcoin = require('../../')
-var crypto = bitcoin.crypto
 var networks = bitcoin.networks
+var scripts = bitcoin.scripts
 
 var Address = bitcoin.Address
 var ECKey = bitcoin.ECKey
-var Transaction = bitcoin.Transaction
-var Script = bitcoin.Script
+var TransactionBuilder = bitcoin.TransactionBuilder
 
 var helloblock = require('helloblock-js')({
   network: 'testnet'
@@ -28,10 +27,10 @@ describe('Bitcoin-js', function() {
     var outputAmount = 1e4
 
     var pubKeys = privKeys.map(function(eck) { return eck.pub })
-    var redeemScript = Script.createMultisigScriptPubKey(2, pubKeys)
-    var scriptPubKey = Script.createP2SHScriptPubKey(redeemScript.getHash())
+    var redeemScript = scripts.multisigOutput(2, pubKeys)
+    var scriptPubKey = scripts.scriptHashOutput(redeemScript.getHash())
 
-    var multisigAddress = Address.fromScriptPubKey(scriptPubKey, networks.testnet).toString()
+    var multisigAddress = Address.fromOutputScript(scriptPubKey, networks.testnet).toString()
 
     // Attempt to send funds to the source address, providing some unspents for later
     helloblock.faucet.withdraw(multisigAddress, coldAmount, function(err) {
@@ -42,35 +41,31 @@ describe('Bitcoin-js', function() {
     var targetAddress = ECKey.makeRandom().pub.getAddress(networks.testnet).toString()
 
     // get latest unspents from the multisigAddress
-    helloblock.addresses.getUnspents(multisigAddress, function(err, resp, resource) {
+    helloblock.addresses.getUnspents(multisigAddress, function(err, res, unspents) {
       if (err) return done(err)
 
       // use the oldest unspent
-      var unspent = resource[resource.length - 1]
+      var unspent = unspents[unspents.length - 1]
       var spendAmount = Math.min(unspent.value, outputAmount)
 
-      var tx = new Transaction()
-      tx.addInput(unspent.txHash, unspent.index)
-      tx.addOutput(targetAddress, spendAmount)
+      var txb = new TransactionBuilder()
+      txb.addInput(unspent.txHash, unspent.index)
+      txb.addOutput(targetAddress, spendAmount)
 
-      var signatures = privKeys.map(function(privKey) {
-        return tx.signScriptSig(0, redeemScript, privKey)
+      privKeys.forEach(function(privKey) {
+        txb.sign(0, privKey, redeemScript)
       })
 
-      var redeemScriptSig = Script.createMultisigScriptSig(signatures)
-      var scriptSig = Script.createP2SHScriptSig(redeemScriptSig, redeemScript)
-      tx.setScriptSig(0, scriptSig)
-
       // broadcast our transaction
-      helloblock.transactions.propagate(tx.toHex(), function(err, resp, resource) {
+      helloblock.transactions.propagate(txb.build().toHex(), function(err, res) {
         // no err means that the transaction has been successfully propagated
         if (err) return done(err)
 
         // Check that the funds (spendAmount Satoshis) indeed arrived at the intended address
-        helloblock.addresses.get(targetAddress, function(err, resp, resource) {
+        helloblock.addresses.get(targetAddress, function(err, res, addrInfo) {
           if (err) return done(err)
 
-          assert.equal(resource.balance, spendAmount)
+          assert.equal(addrInfo.balance, spendAmount)
           done()
         })
       })

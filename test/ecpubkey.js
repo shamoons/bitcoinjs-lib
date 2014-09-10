@@ -1,12 +1,12 @@
 var assert = require('assert')
 var crypto = require('../src/crypto')
 var networks = require('../src/networks')
-var sec = require('../src/sec')
-var ecparams = sec('secp256k1')
 
 var BigInteger = require('bigi')
-var ECPointFp = require('../src/ec').ECPointFp
 var ECPubKey = require('../src/ecpubkey')
+
+var ecurve = require('ecurve')
+var curve = ecurve.getCurveByName('secp256k1')
 
 var fixtures = require('./fixtures/ecpubkey.json')
 
@@ -14,12 +14,10 @@ describe('ECPubKey', function() {
   var Q
 
   beforeEach(function() {
-    var curve = ecparams.getCurve()
-
-    Q = new ECPointFp(
+    Q = ecurve.Point.fromAffine(
       curve,
-      curve.fromBigInteger(new BigInteger(fixtures.Q.x)),
-      curve.fromBigInteger(new BigInteger(fixtures.Q.y))
+      new BigInteger(fixtures.Q.x),
+      new BigInteger(fixtures.Q.y)
     )
   })
 
@@ -93,13 +91,13 @@ describe('ECPubKey', function() {
     it('verifies a valid signature', function() {
       var hash = crypto.sha256(fixtures.message)
 
-      assert.ok(pubKey.verify(hash, signature))
+      assert(pubKey.verify(hash, signature))
     })
 
     it('doesn\'t verify the wrong signature', function() {
       var hash = crypto.sha256('mushrooms')
 
-      assert.ok(!pubKey.verify(hash, signature))
+      assert(!pubKey.verify(hash, signature))
     })
   })
 })

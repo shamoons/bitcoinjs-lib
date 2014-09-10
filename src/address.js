@@ -1,26 +1,21 @@
 var assert = require('assert')
-var base58check = require('./base58check')
+var base58check = require('bs58check')
 var networks = require('./networks')
-var Script = require('./script')
+var scripts = require('./scripts')
 
-function findScriptTypeByVersion(queryVersion) {
+function findScriptTypeByVersion(version) {
   for (var networkName in networks) {
     var network = networks[networkName]
 
-    for (var versionName in network) {
-      var version = network[versionName]
-
-      if (version === queryVersion) {
-        return versionName
-      }
-    }
+    if (version === network.pubKeyHash) return 'pubkeyhash'
+    if (version === network.scriptHash) return 'scripthash'
   }
 }
 
 function Address(hash, version) {
   assert(Buffer.isBuffer(hash), 'Expected Buffer, got ' + hash)
   assert.strictEqual(hash.length, 20, 'Invalid hash length')
-  assert.strictEqual(version & 0xFF, version, 'Invalid version byte')
+  assert.strictEqual(version & 0xff, version, 'Invalid version byte')
 
   this.hash = hash
   this.version = version
@@ -35,18 +30,13 @@ Address.fromBase58Check = function(string) {
   return new Address(hash, version)
 }
 
-Address.fromScriptPubKey = function(script, network) {
+Address.fromOutputScript = function(script, network) {
   network = network || networks.bitcoin
 
-  var type = script.getOutType()
+  var type = scripts.classifyOutput(script)
 
-  if (type === 'pubkeyhash') {
-    return new Address(new Buffer(script.chunks[2]), network.pubKeyHash)
-  }
-
-  else if (type === 'scripthash') {
-    return new Address(new Buffer(script.chunks[1]), network.scriptHash)
-  }
+  if (type === 'pubkeyhash') return new Address(script.chunks[2], network.pubKeyHash)
+  if (type === 'scripthash') return new Address(script.chunks[1], network.scriptHash)
 
   assert(false, type + ' has no matching Address')
 }
@@ -60,18 +50,13 @@ Address.prototype.toBase58Check = function () {
   return base58check.encode(payload)
 }
 
-Address.prototype.toScriptPubKey = function() {
+Address.prototype.toOutputScript = function() {
   var scriptType = findScriptTypeByVersion(this.version)
 
-  if (scriptType === 'pubKeyHash') {
-    return Script.createPubKeyHashScriptPubKey(this.hash)
-  }
+  if (scriptType === 'pubkeyhash') return scripts.pubKeyHashOutput(this.hash)
+  if (scriptType === 'scripthash') return scripts.scriptHashOutput(this.hash)
 
-  else if (scriptType === 'scriptHash') {
-    return Script.createP2SHScriptPubKey(this.hash)
-  }
-
-  assert(false, this.toString() + ' has no matching script')
+  assert(false, this.toString() + ' has no matching Script')
 }
 
 Address.prototype.toString = Address.prototype.toBase58Check

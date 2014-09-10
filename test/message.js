@@ -1,6 +1,7 @@
 var assert = require('assert')
 var networks = require('../src/networks')
 
+var Address = require('../src/address')
 var BigInteger = require('bigi')
 var ECKey = require('../src/eckey')
 var Message = require('../src/message')
@@ -9,8 +10,8 @@ var fixtures = require('./fixtures/message.json')
 
 describe('Message', function() {
   describe('magicHash', function() {
-    it('matches the test vectors', function() {
-      fixtures.valid.magicHash.forEach(function(f) {
+    fixtures.valid.magicHash.forEach(function(f) {
+      it('produces the correct magicHash for \"' + f.message + '\" (' + f.network + ')', function() {
         var network = networks[f.network]
         var actual = Message.magicHash(f.message, network)
 
@@ -20,25 +21,30 @@ describe('Message', function() {
   })
 
   describe('verify', function() {
-    it('verifies a valid signature', function() {
-      fixtures.valid.verify.forEach(function(f) {
+    it('accepts an Address object', function() {
+      var f = fixtures.valid.verify[0]
+      var network = networks[f.network]
+
+      var address = Address.fromBase58Check(f.address)
+      assert(Message.verify(address, f.signature, f.message, network))
+    })
+
+    fixtures.valid.verify.forEach(function(f) {
+      it('verifies a valid signature for \"' + f.message + '\" (' + f.network + ')', function() {
         var network = networks[f.network]
 
-        var signature = new Buffer(f.signature, 'base64')
-        assert.ok(Message.verify(f.address, signature, f.message, network))
+        var signature = f.signature
+        assert(Message.verify(f.address, f.signature, f.message, network))
 
         if (f.compressed) {
-          var compressedSignature = new Buffer(f.compressed.signature, 'base64')
-
-          assert.ok(Message.verify(f.compressed.address, compressedSignature, f.message, network))
+          assert(Message.verify(f.compressed.address, f.compressed.signature, f.message, network))
         }
       })
     })
 
     fixtures.invalid.verify.forEach(function(f) {
       it(f.description, function() {
-        var signature = new Buffer(f.signature, 'base64')
-        assert.ok(!Message.verify(f.address, signature, f.message))
+        assert(!Message.verify(f.address, f.signature, f.message))
       })
     })
   })
@@ -48,12 +54,12 @@ describe('Message', function() {
       it(f.description, function() {
         var network = networks[f.network]
 
-        var privKey = new ECKey(new BigInteger(f.D), false)
+        var privKey = new ECKey(new BigInteger(f.d), false)
         var signature = Message.sign(privKey, f.message, network)
         assert.equal(signature.toString('base64'), f.signature)
 
         if (f.compressed) {
-          var compressedPrivKey = new ECKey(new BigInteger(f.D))
+          var compressedPrivKey = new ECKey(new BigInteger(f.d))
           var compressedSignature = Message.sign(compressedPrivKey, f.message)
 
           assert.equal(compressedSignature.toString('base64'), f.compressed.signature)
