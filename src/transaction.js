@@ -1,6 +1,7 @@
 var assert = require('assert')
 var bufferutils = require('./bufferutils')
 var crypto = require('./crypto')
+var enforceType = require('./types')
 var opcodes = require('./opcodes')
 var scripts = require('./scripts')
 
@@ -8,18 +9,18 @@ var Address = require('./address')
 var ECSignature = require('./ecsignature')
 var Script = require('./script')
 
-Transaction.DEFAULT_SEQUENCE = 0xffffffff
-Transaction.SIGHASH_ALL = 0x01
-Transaction.SIGHASH_NONE = 0x02
-Transaction.SIGHASH_SINGLE = 0x03
-Transaction.SIGHASH_ANYONECANPAY = 0x80
-
 function Transaction() {
   this.version = 1
   this.locktime = 0
   this.ins = []
   this.outs = []
 }
+
+Transaction.DEFAULT_SEQUENCE = 0xffffffff
+Transaction.SIGHASH_ALL = 0x01
+Transaction.SIGHASH_NONE = 0x02
+Transaction.SIGHASH_SINGLE = 0x03
+Transaction.SIGHASH_ANYONECANPAY = 0x80
 
 /**
  * Create a new txin.
@@ -31,32 +32,31 @@ function Transaction() {
  *
  * Note that this method does not sign the created input.
  */
-Transaction.prototype.addInput = function(tx, index, sequence) {
-  if (sequence == undefined) sequence = Transaction.DEFAULT_SEQUENCE
+Transaction.prototype.addInput = function(hash, index, sequence, script) {
+  if (sequence === undefined) sequence = Transaction.DEFAULT_SEQUENCE
+  script = script || Script.EMPTY
 
-  var hash
-
-  if (typeof tx === 'string') {
+  if (typeof hash === 'string') {
     // TxId hex is big-endian, we need little-endian
-    hash = bufferutils.reverse(new Buffer(tx, 'hex'))
+    hash = bufferutils.reverse(new Buffer(hash, 'hex'))
 
-  } else if (tx instanceof Transaction) {
-    hash = tx.getHash()
+  } else if (hash instanceof Transaction) {
+    hash = hash.getHash()
 
-  } else {
-    hash = tx
   }
 
-  assert(Buffer.isBuffer(hash), 'Expected Transaction, txId or txHash, got ' + tx)
+  enforceType('Buffer', hash)
+  enforceType('Number', index)
+  enforceType('Number', sequence)
+  enforceType(Script, script)
+
   assert.equal(hash.length, 32, 'Expected hash length of 32, got ' + hash.length)
-  assert(isFinite(index), 'Expected number index, got ' + index)
-  assert(isFinite(sequence), 'Expected number sequence, got ' + sequence)
 
   // Add the input and return the input's index
   return (this.ins.push({
     hash: hash,
     index: index,
-    script: Script.EMPTY,
+    script: script,
     sequence: sequence
   }) - 1)
 }
@@ -81,8 +81,8 @@ Transaction.prototype.addOutput = function(scriptPubKey, value) {
     scriptPubKey = scriptPubKey.toOutputScript()
   }
 
-  assert(scriptPubKey instanceof Script, 'Expected Address or Script, got ' + scriptPubKey)
-  assert(isFinite(value), 'Expected number value, got ' + value)
+  enforceType(Script, scriptPubKey)
+  enforceType('Number', value)
 
   // Add the output and return the output's index
   return (this.outs.push({
@@ -113,14 +113,17 @@ Transaction.prototype.toBuffer = function () {
     slice.copy(buffer, offset)
     offset += slice.length
   }
+
   function writeUInt32(i) {
     buffer.writeUInt32LE(i, offset)
     offset += 4
   }
+
   function writeUInt64(i) {
     bufferutils.writeUInt64LE(buffer, i, offset)
     offset += 8
   }
+
   function writeVarInt(i) {
     var n = bufferutils.writeVarInt(buffer, i, offset)
     offset += n
@@ -172,9 +175,12 @@ Transaction.prototype.hashForSignature = function(inIndex, prevOutScript, hashTy
     prevOutScript = tmp
   }
 
+  enforceType('Number', inIndex)
+  enforceType(Script, prevOutScript)
+  enforceType('Number', hashType)
+
   assert(inIndex >= 0, 'Invalid vin index')
   assert(inIndex < this.ins.length, 'Invalid vin index')
-  assert(prevOutScript instanceof Script, 'Invalid Script object')
 
   var txTmp = this.clone()
   var hashScript = prevOutScript.without(opcodes.OP_CODESEPARATOR)
@@ -244,20 +250,27 @@ Transaction.fromBuffer = function(buffer) {
     offset += n
     return buffer.slice(offset - n, offset)
   }
+
   function readUInt32() {
     var i = buffer.readUInt32LE(offset)
     offset += 4
     return i
   }
+
   function readUInt64() {
     var i = bufferutils.readUInt64LE(buffer, offset)
     offset += 8
     return i
   }
+
   function readVarInt() {
     var vi = bufferutils.readVarInt(buffer, offset)
     offset += vi.size
     return vi.number
+  }
+
+  function readScript() {
+    return Script.fromBuffer(readSlice(readVarInt()))
   }
 
   var tx = new Transaction()
@@ -265,29 +278,19 @@ Transaction.fromBuffer = function(buffer) {
 
   var vinLen = readVarInt()
   for (var i = 0; i < vinLen; ++i) {
-    var hash = readSlice(32)
-    var vout = readUInt32()
-    var scriptLen = readVarInt()
-    var script = readSlice(scriptLen)
-    var sequence = readUInt32()
-
     tx.ins.push({
-      hash: hash,
-      index: vout,
-      script: Script.fromBuffer(script),
-      sequence: sequence
+      hash: readSlice(32),
+      index: readUInt32(),
+      script: readScript(),
+      sequence: readUInt32()
     })
   }
 
   var voutLen = readVarInt()
   for (i = 0; i < voutLen; ++i) {
-    var value = readUInt64()
-    var scriptLen = readVarInt()
-    var script = readSlice(scriptLen)
-
     tx.outs.push({
-      value: value,
-      script: Script.fromBuffer(script)
+      value: readUInt64(),
+      script: readScript(),
     })
   }
 

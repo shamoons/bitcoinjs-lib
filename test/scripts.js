@@ -19,6 +19,17 @@ describe('Scripts', function() {
         assert.equal(type, f.type)
       })
     })
+
+    fixtures.invalid.classify.forEach(function(f) {
+      if (!f.scriptSig) return
+
+      it('returns nonstandard for ' + f.description, function() {
+        var script = Script.fromASM(f.scriptSig)
+        var type = scripts.classifyInput(script)
+
+        assert.equal(type, 'nonstandard')
+      })
+    })
   })
 
   describe('classifyOutput', function() {
@@ -34,6 +45,8 @@ describe('Scripts', function() {
     })
 
     fixtures.invalid.classify.forEach(function(f) {
+      if (!f.scriptPubKey) return
+
       it('returns nonstandard for ' + f.description, function() {
         var script = Script.fromASM(f.scriptPubKey)
         var type = scripts.classifyOutput(script)
@@ -166,6 +179,21 @@ describe('Scripts', function() {
         it('is generated correctly for ' + address, function() {
           var scriptPubKey = scripts.scriptHashOutput(redeemScript.getHash())
 
+          assert.equal(scriptPubKey.toASM(), f.scriptPubKey)
+        })
+      })
+    })
+  })
+
+  describe('data', function() {
+    fixtures.valid.forEach(function(f) {
+      if (f.type !== 'nulldata') return
+
+      var data = new Buffer(f.data, 'hex')
+      var scriptPubKey = scripts.dataOutput(data)
+
+      describe('output script', function() {
+        it('is generated correctly for ' + f.scriptPubKey, function() {
           assert.equal(scriptPubKey.toASM(), f.scriptPubKey)
         })
       })

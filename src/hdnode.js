@@ -1,6 +1,7 @@
 var assert = require('assert')
 var base58check = require('bs58check')
 var crypto = require('./crypto')
+var enforceType = require('./types')
 var networks = require('./networks')
 
 var BigInteger = require('bigi')
@@ -30,7 +31,8 @@ function findBIP32ParamsByVersion(version) {
 function HDNode(K, chainCode, network) {
   network = network || networks.bitcoin
 
-  assert(Buffer.isBuffer(chainCode), 'Expected Buffer, got ' + chainCode)
+  enforceType('Buffer', chainCode)
+
   assert.equal(chainCode.length, 32, 'Expected chainCode length of 32, got ' + chainCode.length)
   assert(network.bip32, 'Unknown BIP32 constants for network')
 
@@ -52,7 +54,8 @@ HDNode.HIGHEST_BIT = 0x80000000
 HDNode.LENGTH = 78
 
 HDNode.fromSeedBuffer = function(seed, network) {
-  assert(Buffer.isBuffer(seed), 'Expected Buffer, got ' + seed)
+  enforceType('Buffer', seed)
+
   assert(seed.length >= 16, 'Seed should be at least 128 bits')
   assert(seed.length <= 64, 'Seed should be at most 512 bits')
 
@@ -72,10 +75,15 @@ HDNode.fromSeedHex = function(hex, network) {
 }
 
 HDNode.fromBase58 = function(string) {
-  return HDNode.fromBuffer(base58check.decode(string))
+  return HDNode.fromBuffer(base58check.decode(string), true)
 }
 
-HDNode.fromBuffer = function(buffer) {
+// FIXME: remove in 2.x.y
+HDNode.fromBuffer = function(buffer, __ignoreDeprecation) {
+  if (!__ignoreDeprecation) {
+    console.warn('HDNode.fromBuffer() is deprecated for removal in 2.x.y, use fromBase58 instead')
+  }
+
   assert.strictEqual(buffer.length, HDNode.LENGTH, 'Invalid buffer length')
 
   // 4 byte: version bytes
@@ -98,18 +106,18 @@ HDNode.fromBuffer = function(buffer) {
 
   // 32 bytes: the chain code
   var chainCode = buffer.slice(13, 45)
-  var hd
+  var data, hd
 
   // 33 bytes: private key data (0x00 + k)
   if (params.isPrivate) {
     assert.strictEqual(buffer.readUInt8(45), 0x00, 'Invalid private key')
-    var data = buffer.slice(46, 78)
+    data = buffer.slice(46, 78)
     var d = BigInteger.fromBuffer(data)
     hd = new HDNode(d, chainCode, params.network)
 
   // 33 bytes: public key data (0x02 + X or 0x03 + X)
   } else {
-    var data = buffer.slice(45, 78)
+    data = buffer.slice(45, 78)
     var Q = ecurve.Point.decodeFrom(curve, data)
     assert.equal(Q.compressed, true, 'Invalid public key')
 
@@ -127,6 +135,7 @@ HDNode.fromBuffer = function(buffer) {
   return hd
 }
 
+// FIXME: remove in 2.x.y
 HDNode.fromHex = function(hex) {
   return HDNode.fromBuffer(new Buffer(hex, 'hex'))
 }
@@ -153,16 +162,21 @@ HDNode.prototype.neutered = function() {
 }
 
 HDNode.prototype.toBase58 = function(isPrivate) {
-  return base58check.encode(this.toBuffer(isPrivate))
+  return base58check.encode(this.toBuffer(isPrivate, true))
 }
 
-HDNode.prototype.toBuffer = function(isPrivate) {
-  if (isPrivate == undefined) {
+// FIXME: remove in 2.x.y
+HDNode.prototype.toBuffer = function(isPrivate, __ignoreDeprecation) {
+  if (isPrivate === undefined) {
     isPrivate = !!this.privKey
 
   // FIXME: remove in 2.x.y
   } else {
     console.warn('isPrivate flag is deprecated, please use the .neutered() method instead')
+  }
+
+  if (!__ignoreDeprecation) {
+    console.warn('HDNode.toBuffer() is deprecated for removal in 2.x.y, use toBase58 instead')
   }
 
   // Version
@@ -204,6 +218,7 @@ HDNode.prototype.toBuffer = function(isPrivate) {
   return buffer
 }
 
+// FIXME: remove in 2.x.y
 HDNode.prototype.toHex = function(isPrivate) {
   return this.toBuffer(isPrivate).toString('hex')
 }

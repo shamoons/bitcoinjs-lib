@@ -1,14 +1,17 @@
 var assert = require('assert')
 var crypto = require('./crypto')
+var enforceType = require('./types')
 
 var BigInteger = require('bigi')
 var ECSignature = require('./ecsignature')
 
 // https://tools.ietf.org/html/rfc6979#section-3.2
 function deterministicGenerateK(curve, hash, d) {
-  assert(Buffer.isBuffer(hash), 'Hash must be a Buffer, not ' + hash)
+  enforceType('Buffer', hash)
+  enforceType(BigInteger, d)
+
+  // sanity check
   assert.equal(hash.length, 32, 'Hash must be 256 bit')
-  assert(d instanceof BigInteger, 'Private key must be a BigInteger')
 
   var x = d.toBuffer(32)
   var k = new Buffer(32)
@@ -73,14 +76,6 @@ function sign(curve, hash, d) {
   return new ECSignature(r, s)
 }
 
-function verify(curve, hash, signature, Q) {
-  // 1.4.2 H = Hash(M), already done by the user
-  // 1.4.3 e = H
-  var e = BigInteger.fromBuffer(hash)
-
-  return verifyRaw(curve, e, signature, Q)
-}
-
 function verifyRaw(curve, e, signature, Q) {
   var n = curve.n
   var G = curve.G
@@ -109,6 +104,14 @@ function verifyRaw(curve, e, signature, Q) {
 
   // 1.4.8 If v = r, output "valid", and if v != r, output "invalid"
   return v.equals(r)
+}
+
+function verify(curve, hash, signature, Q) {
+  // 1.4.2 H = Hash(M), already done by the user
+  // 1.4.3 e = H
+  var e = BigInteger.fromBuffer(hash)
+
+  return verifyRaw(curve, e, signature, Q)
 }
 
 /**

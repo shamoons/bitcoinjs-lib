@@ -59,7 +59,7 @@ From the repository: Compile `bitcoinjs-min.js` with the following command:
 From NPM:
 
     $ npm -g install bitcoinjs-lib browserify uglify-js
-    $ browserify -r bitcoinjs-lib -s Bitcoin | uglifyjs > bitcoinjs.min.js
+    $ browserify -r bitcoinjs-lib -s bitcoin | uglifyjs > bitcoinjs.min.js
 
 After loading this file in your browser, you will be able to use the global `bitcoin` object.
 
@@ -110,7 +110,7 @@ console.log(tx.toHex())
 ```
 
 
-### Creating a P2SH Multsig Address
+### Creating a P2SH Multisig Address
 
 ``` javascript
 var bitcoin = require('bitcoinjs-lib')
@@ -130,18 +130,20 @@ console.log("multisigP2SH:", multisigAddress)
 
 ## Projects utilizing BitcoinJS
 
-- [Coinpunk](https://coinpunk.com)
-- [Hive Wallet](https://www.hivewallet.com)
-- [Justchain Exchange](https://justcoin.com)
-- [Skyhook ATM](http://projectskyhook.com)
+
 - [BitAddress](https://www.bitaddress.org)
 - [Blockchain.info](https://blockchain.info/wallet)
 - [Brainwallet](https://brainwallet.github.io)
+- [Coinkite](https://coinkite.com)
+- [Coinpunk](https://coinpunk.com)
 - [Dark Wallet](https://darkwallet.unsystem.net)
+- [DecentralBank](http://decentralbank.co)
 - [Dogechain Wallet](https://dogechain.info)
 - [GreenAddress](https://greenaddress.it)
-- [DecentralBank](http://decentralbank.co)
-- [Quickcoin](https://wallet.quickcoin.co)
+- [Hive Wallet](https://www.hivewallet.com)
+- [Justchain Exchange](https://justcoin.com)
+- [QuickCoin](https://wallet.quickcoin.co)
+- [Skyhook ATM](http://projectskyhook.com)
 
 
 ## Contributors
